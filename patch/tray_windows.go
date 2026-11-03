@@ -135,7 +135,7 @@ func trayMainLoop(ctx context.Context, serveErr chan error, pageURL string) erro
 		quit()
 	}()
 
-	systray.Register(
+	systray.Run(
 		func() {
 			if len(trayIconICO) > 0 {
 				systray.SetIcon(trayIconICO)
@@ -163,7 +163,6 @@ func trayMainLoop(ctx context.Context, serveErr chan error, pageURL string) erro
 		},
 		func() { setReason(nil) },
 	)
-	systray.Run()
 	select {
 	case err := <-reason:
 		return err
