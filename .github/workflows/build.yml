@@ -65,11 +65,20 @@ jobs:
           gcc --version | Select-Object -First 1
           echo "$mingwBin" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
 
-      - name: 应用便携版补丁（前端嵌入 + 双击自启动）
+      - name: 应用便携版补丁（前端嵌入 + 双击自启动 + 托盘）
         run: |
           Copy-Item 'pack\patch\webstatic.go' 'upstream\backend\cmd\server\webstatic.go'
           Copy-Item 'pack\patch\selflaunch.go' 'upstream\backend\cmd\server\selflaunch.go'
+          Copy-Item 'pack\patch\tray_windows.go' 'upstream\backend\cmd\server\tray_windows.go'
+          Copy-Item 'pack\patch\tray_other.go' 'upstream\backend\cmd\server\tray_other.go'
           python pack\patch\patch_main.py upstream\backend\cmd\server\main.go
+
+      - name: 拉取托盘库依赖
+        working-directory: upstream/backend
+        run: go get github.com/getlantern/systray
+
+      - name: 生成托盘图标
+        run: go run pack\patch\tools\genicon\main.go -out upstream\backend\cmd\server\trayicon.ico
 
       - name: 构建前端
         run: |
@@ -85,7 +94,7 @@ jobs:
           $env:CGO_ENABLED = '1'
           cd upstream\backend
           New-Item -ItemType Directory -Force "$env:GITHUB_WORKSPACE\stage" | Out-Null
-          go build -trimpath -ldflags '-s -w' -o "$env:GITHUB_WORKSPACE\stage\yingce.exe" ./cmd/server
+          go build -trimpath -ldflags '-s -w -H=windowsgui' -o "$env:GITHUB_WORKSPACE\stage\yingce.exe" ./cmd/server
           $f = Get-Item "$env:GITHUB_WORKSPACE\stage\yingce.exe"
           Write-Host ("yingce.exe = {0} MB" -f [math]::Round($f.Length / 1MB, 1))
 

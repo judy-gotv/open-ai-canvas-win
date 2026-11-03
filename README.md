@@ -2,7 +2,8 @@
 
 把开源项目 [ddcat-ai/open-ai-canvas](https://github.com/ddcat-ai/open-ai-canvas)（影策 AI 影视创作工作台）
 打成 Windows 绿色免安装包的构建工程。产物：`yingce-portable-win64.zip`，
-解压后双击 `yingce.exe` 即用（自动配好数据目录、端口并弹浏览器），
+解压后双击 `yingce.exe` 即用（无控制台窗口，系统托盘常驻图标，
+自动配好数据目录、端口并弹浏览器），
 无需安装 Node / Python / 数据库；「启动影策.bat」为备用启动方式。
 
 ## 用法

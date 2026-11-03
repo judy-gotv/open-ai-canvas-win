@@ -56,6 +56,15 @@ func applyPortableDefaults() {
 		sep := string(os.PathListSeparator)
 		os.Setenv("PATH", strings.Join(prepend, sep)+sep+os.Getenv("PATH"))
 	}
+	// 若便携地址已有服务在跑，直接打开浏览器后退出（免黑窗口下重复启动报错）。
+	maybeHandleAlreadyRunning(os.Getenv("CANVAS_BACKEND_ADDR"))
+}
+
+// openBrowserNow 立即用默认浏览器打开 URL（Windows）。
+func openBrowserNow(url string) {
+	// rundll32 是打开默认浏览器最稳的方式，避开 start 命令的引号坑。
+	cmd := exec.Command("rundll32", "url.dll,FileProtocolHandler", url)
+	_ = cmd.Start()
 }
 
 // maybeOpenBrowser 在后端开始监听后自动打开浏览器。
@@ -70,12 +79,7 @@ func maybeOpenBrowser(addr string) {
 	}
 	go func() {
 		time.Sleep(1500 * time.Millisecond)
-		// rundll32 是打开默认浏览器最稳的方式，避开 start 命令的引号坑。
-		cmd := exec.Command("rundll32", "url.dll,FileProtocolHandler", url)
-		if err := cmd.Start(); err != nil {
-			slog.Warn("无法自动打开浏览器", "url", url, "error", err)
-			return
-		}
+		openBrowserNow(url)
 		slog.Info("已在浏览器打开", "url", url)
 		fmt.Printf("\n影策已启动：%s\n直接关闭本窗口即可停止服务。\n", url)
 	}()
