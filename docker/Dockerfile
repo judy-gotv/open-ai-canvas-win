@@ -12,6 +12,9 @@ WORKDIR /app/web
 COPY upstream/web/package.json upstream/web/bun.lock ./
 RUN bun install --frozen-lockfile
 COPY upstream/VERSION /app/VERSION
+COPY upstream/CHANGELOG.md /app/CHANGELOG.md
+COPY upstream/README.md /app/README.md
+COPY upstream/assets /app/assets
 COPY upstream/web ./
 ARG BUILD_VERSION
 ARG BUILD_COMMIT=unknown
