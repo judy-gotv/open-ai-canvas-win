@@ -1,7 +1,7 @@
 # 影策 Windows 便携版构建（作者：Passwd Word）
 #
 # 触发：Actions 页面手动运行，或推送 win-v* 标签自动发版。
-# 产物：yingce-portable-win64.zip（绿色免安装：解压后双击「启动影策.bat」即用）
+# 产物：yingce-portable-win64.zip（绿色免安装：解压后双击 yingce.exe 即用）
 #
 # 原理：上游是 Go 后端 + Web 前端。本工作流给后端打一个小补丁，
 # 把前端 dist 直接 embed 进 yingce.exe（单文件同时提供 Web UI 与 /api，
@@ -18,6 +18,9 @@ on:
   push:
     tags:
       - 'win-v*'
+
+permissions:
+  contents: write  # 发 Release 需要
 
 env:
   UPSTREAM_REF: ${{ inputs.upstream_ref || 'dc035d51311925e48ab1542df094bd1e2b07ba7f' }}
@@ -66,23 +69,7 @@ jobs:
         run: |
           Copy-Item 'pack\patch\webstatic.go' 'upstream\backend\cmd\server\webstatic.go'
           Copy-Item 'pack\patch\selflaunch.go' 'upstream\backend\cmd\server\selflaunch.go'
-          python -c "
-          p = 'upstream/backend/cmd/server/main.go'
-          s = open(p, encoding='utf-8').read()
-          subs = [
-            ('r.NoRoute(handler.SystemProxyNoRouteHandler(svc))',
-             'registerWebStatic(r, handler.SystemProxyNoRouteHandler(svc))'),
-            ('dataDir := env(\"CANVAS_BACKEND_DATA_DIR\", \"data\")',
-             'applyPortableDefaults()\n\tdataDir := env(\"CANVAS_BACKEND_DATA_DIR\", \"data\")'),
-            ('slog.Info(\"backend listening\", \"addr\", addr)',
-             'slog.Info(\"backend listening\", \"addr\", addr)\n\tmaybeOpenBrowser(addr)'),
-          ]
-          for old, new in subs:
-              assert s.count(old) == 1, 'anchor not unique/found: %r' % old
-              s = s.replace(old, new)
-          open(p, 'w', encoding='utf-8', newline='').write(s)
-          print('main.go patched (3 anchors)')
-          "
+          python pack\patch\patch_main.py upstream\backend\cmd\server\main.go
 
       - name: 构建前端
         run: |
