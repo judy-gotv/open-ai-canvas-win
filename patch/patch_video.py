@@ -27,10 +27,11 @@ def patch(path, subs):
     s = open(path, encoding="utf-8").read()
     for i, (old, new) in enumerate(subs):
         n = s.count(old)
-        assert n == 1, "%s 第%d处锚点命中 %d 次（期望1次）" % (path, i + 1, n)
+        # 注意：断言文案必须纯 ASCII，Windows runner 默认 cp1252，中文会 UnicodeEncodeError
+        assert n == 1, "%s anchor #%d hit %d times (expected 1)" % (path, i + 1, n)
         s = s.replace(old, new)
     open(path, "w", encoding="utf-8").write(s)
-    print("patched %s (%d处)" % (path, len(subs)))
+    print("patched %s (%d subs)" % (path, len(subs)))
 
 
 # ---------------- 1. backend/internal/protocol/builtin.go ----------------
@@ -237,4 +238,4 @@ patch(p, [
     ),
 ])
 
-print("全部补丁应用成功")
+print("all video patches applied OK")
