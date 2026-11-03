@@ -97,7 +97,9 @@ jobs:
 
   notify-failure:
     needs: [check, build]
-    if: needs.check.outputs.build_needed == 'true' && needs.build.result == 'failure'
+    # 注意：job 级 if 若不含 failure()/always() 等状态函数，GitHub 会自动附加 success()，
+    # 导致 build 失败时本 job 被跳过；必须显式写 failure()。
+    if: failure() && needs.check.outputs.build_needed == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: 建 Issue 提醒构建失败
