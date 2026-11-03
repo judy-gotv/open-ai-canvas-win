@@ -46,8 +46,9 @@ COPY upstream/VERSION /src/VERSION
 COPY --from=web-build /app/web/dist /src/backend/cmd/server/webdist/
 COPY patch/webstatic.go /src/backend/cmd/server/webstatic.go
 # 打补丁：main.go 接入前端嵌入（仅 webstatic，不含托盘/自启动）+ 视频 /content 修复
-RUN python3 patch/patch_docker_main.py /src/backend/cmd/server/main.go \
- && python3 patch/patch_video.py /src
+COPY patch/patch_docker_main.py patch/patch_video.py /tmp/
+RUN python3 /tmp/patch_docker_main.py /src/backend/cmd/server/main.go \
+ && python3 /tmp/patch_video.py /src
 
 # 按目标架构交叉编译（CGO 开启，sqlite 用）
 ARG BUILD_VERSION
