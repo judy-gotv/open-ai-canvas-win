@@ -76,6 +76,7 @@ jobs:
           Copy-Item 'pack\patch\tray_windows.go' 'upstream\backend\cmd\server\tray_windows.go'
           Copy-Item 'pack\patch\tray_other.go' 'upstream\backend\cmd\server\tray_other.go'
           python pack\patch\patch_main.py upstream\backend\cmd\server\main.go
+          python pack\patch\patch_video.py upstream
 
       - name: 拉取托盘库依赖
         working-directory: upstream/backend
