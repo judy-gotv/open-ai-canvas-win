@@ -7,6 +7,7 @@ $env:CANVAS_BACKEND_ADDR = "127.0.0.1:$port"
 $env:CANVAS_BACKEND_DATA_DIR = Join-Path $root "data"
 $env:CANVAS_CORS_ORIGINS = "http://127.0.0.1:$port"
 $env:CANVAS_PI_RUNTIME_DIR = Join-Path $root "agent-runtime\pi"
+$env:CANVAS_NO_BROWSER = "1"  # 脚本自己等就绪后弹浏览器，关掉 exe 的自动弹窗避免重复
 $env:PATH = (Join-Path $root "tools\node") + ";" + (Join-Path $root "tools\ffmpeg\bin") + ";" + $env:PATH
 
 $exe = Join-Path $root "yingce.exe"

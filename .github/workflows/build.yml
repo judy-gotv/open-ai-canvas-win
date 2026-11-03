@@ -62,17 +62,26 @@ jobs:
           gcc --version | Select-Object -First 1
           echo "$mingwBin" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
 
-      - name: 应用前端嵌入补丁
+      - name: 应用便携版补丁（前端嵌入 + 双击自启动）
         run: |
           Copy-Item 'pack\patch\webstatic.go' 'upstream\backend\cmd\server\webstatic.go'
+          Copy-Item 'pack\patch\selflaunch.go' 'upstream\backend\cmd\server\selflaunch.go'
           python -c "
           p = 'upstream/backend/cmd/server/main.go'
           s = open(p, encoding='utf-8').read()
-          old = 'r.NoRoute(handler.SystemProxyNoRouteHandler(svc))'
-          new = 'registerWebStatic(r, handler.SystemProxyNoRouteHandler(svc))'
-          assert s.count(old) == 1, 'patch anchor not found: %d' % s.count(old)
-          open(p, 'w', encoding='utf-8', newline='').write(s.replace(old, new))
-          print('main.go patched')
+          subs = [
+            ('r.NoRoute(handler.SystemProxyNoRouteHandler(svc))',
+             'registerWebStatic(r, handler.SystemProxyNoRouteHandler(svc))'),
+            ('dataDir := env(\"CANVAS_BACKEND_DATA_DIR\", \"data\")',
+             'applyPortableDefaults()\n\tdataDir := env(\"CANVAS_BACKEND_DATA_DIR\", \"data\")'),
+            ('slog.Info(\"backend listening\", \"addr\", addr)',
+             'slog.Info(\"backend listening\", \"addr\", addr)\n\tmaybeOpenBrowser(addr)'),
+          ]
+          for old, new in subs:
+              assert s.count(old) == 1, 'anchor not unique/found: %r' % old
+              s = s.replace(old, new)
+          open(p, 'w', encoding='utf-8', newline='').write(s)
+          print('main.go patched (3 anchors)')
           "
 
       - name: 构建前端

@@ -2,7 +2,8 @@
 
 把开源项目 [ddcat-ai/open-ai-canvas](https://github.com/ddcat-ai/open-ai-canvas)（影策 AI 影视创作工作台）
 打成 Windows 绿色免安装包的构建工程。产物：`yingce-portable-win64.zip`，
-解压后双击「启动影策.bat」即用，无需安装 Node / Python / 数据库。
+解压后双击 `yingce.exe` 即用（自动配好数据目录、端口并弹浏览器），
+无需安装 Node / Python / 数据库；「启动影策.bat」为备用启动方式。
 
 ## 用法
 
@@ -15,8 +16,9 @@
 
 ### 构建内容
 
-- 上游 Go 后端 + 一个小补丁（`patch/webstatic.go`）：把前端 `dist` 直接 embed
-  进 `yingce.exe`，单个 exe 同时提供 Web UI 与 `/api`，无需 nginx。
+- 上游 Go 后端 + 两个小补丁：`patch/webstatic.go` 把前端 `dist` 直接 embed
+  进 `yingce.exe`，单个 exe 同时提供 Web UI 与 `/api`，无需 nginx；
+  `patch/selflaunch.go` 让 exe 双击自启动（自动配 data 目录/端口/PATH 并弹浏览器）。
 - 前端：`bun install --frozen-lockfile` + `vite build`（与官方 Dockerfile 同口径）。
 - 后端：`windows/amd64` + CGO（mingw-w64 编译 sqlite）。
 - 附带：便携版 Node.js 22（画布 Agent 用）、ffmpeg（视频转码/字幕转写）、
