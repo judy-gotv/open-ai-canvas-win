@@ -1,11 +1,8 @@
 # 影策 Windows 便携版构建（作者：Passwd Word）
 #
 # 触发：Actions 页面手动运行，或推送 win-v* 标签自动发版。
-# 产物：yingce-portable-win64.zip（绿色免安装：解压后双击 yingce.exe 即用）
-#
-# 原理：上游是 Go 后端 + Web 前端。本工作流给后端打一个小补丁，
-# 把前端 dist 直接 embed 进 yingce.exe（单文件同时提供 Web UI 与 /api，
-# 无需 nginx），再配上便携版 node / ffmpeg / Agent 运行时 / 官方插件包。
+# 实际构建逻辑在 build-core.yml（复用），本文件只是薄封装。
+# 定时自动跟踪上游见 auto-update.yml。
 name: 构建 Windows 便携版
 
 on:
@@ -22,131 +19,14 @@ on:
 permissions:
   contents: write  # 发 Release 需要
 
-env:
-  UPSTREAM_REF: ${{ inputs.upstream_ref || 'dc035d51311925e48ab1542df094bd1e2b07ba7f' }}
-  NODE_VERSION: '22.19.0'
-  FFMPEG_URL: 'https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip'
+concurrency:
+  group: winportable-build
+  cancel-in-progress: false
 
 jobs:
   build:
-    runs-on: windows-latest
-    defaults:
-      run:
-        shell: pwsh
-    steps:
-      - name: 拉取上游源码
-        uses: actions/checkout@v4
-        with:
-          repository: ddcat-ai/open-ai-canvas
-          ref: ${{ env.UPSTREAM_REF }}
-          path: upstream
-
-      - name: 拉取本仓库（补丁与脚本）
-        uses: actions/checkout@v4
-        with:
-          path: pack
-
-      - name: 安装 Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.25'
-          cache: true
-
-      - name: 安装 Bun
-        uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: '1.3.9'
-
-      - name: 安装 mingw-w64（CGO 编译 sqlite 用）
-        run: |
-          choco install mingw -y --no-progress
-          $mingwBin = 'C:\ProgramData\chocolatey\lib\mingw\tools\install\mingw64\bin'
-          if (Test-Path $mingwBin) { $env:PATH = "$mingwBin;$env:PATH" }
-          gcc --version | Select-Object -First 1
-          echo "$mingwBin" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
-
-      - name: 应用便携版补丁（前端嵌入 + 双击自启动 + 托盘）
-        run: |
-          Copy-Item 'pack\patch\webstatic.go' 'upstream\backend\cmd\server\webstatic.go'
-          Copy-Item 'pack\patch\selflaunch.go' 'upstream\backend\cmd\server\selflaunch.go'
-          Copy-Item 'pack\patch\tray_windows.go' 'upstream\backend\cmd\server\tray_windows.go'
-          Copy-Item 'pack\patch\tray_other.go' 'upstream\backend\cmd\server\tray_other.go'
-          python pack\patch\patch_main.py upstream\backend\cmd\server\main.go
-
-      - name: 拉取托盘库依赖
-        working-directory: upstream/backend
-        run: go get github.com/getlantern/systray
-
-      - name: 生成托盘图标
-        run: go run pack\patch\tools\genicon\main.go -out upstream\backend\cmd\server\trayicon.ico
-
-      - name: 构建前端
-        run: |
-          cd upstream\web
-          bun install --frozen-lockfile
-          bun --bun ./node_modules/vite/bin/vite.js build
-
-      - name: 编译后端 Windows exe（前端已嵌入）
-        run: |
-          $webdist = 'upstream\backend\cmd\server\webdist'
-          if (Test-Path $webdist) { Remove-Item -Recurse -Force $webdist }
-          Copy-Item -Recurse 'upstream\web\dist' $webdist
-          $env:CGO_ENABLED = '1'
-          cd upstream\backend
-          New-Item -ItemType Directory -Force "$env:GITHUB_WORKSPACE\stage" | Out-Null
-          go build -trimpath -ldflags '-s -w -H=windowsgui' -o "$env:GITHUB_WORKSPACE\stage\yingce.exe" ./cmd/server
-          $f = Get-Item "$env:GITHUB_WORKSPACE\stage\yingce.exe"
-          Write-Host ("yingce.exe = {0} MB" -f [math]::Round($f.Length / 1MB, 1))
-
-      - name: 准备 Agent 运行时依赖
-        run: |
-          cd upstream\backend\agent-runtime\pi
-          npm ci --no-audit --no-fund
-
-      - name: 下载 node / ffmpeg 便携版
-        run: |
-          New-Item -ItemType Directory -Force dl | Out-Null
-          curl.exe -L --retry 3 -o dl\node.zip "https://nodejs.org/dist/v$env:NODE_VERSION/node-v$env:NODE_VERSION-win-x64.zip"
-          curl.exe -L --retry 3 -o dl\ffmpeg.zip $env:FFMPEG_URL
-
-      - name: 组装便携包
-        run: |
-          $pkg = "$env:GITHUB_WORKSPACE\stage\yingce-portable"
-          New-Item -ItemType Directory -Force $pkg | Out-Null
-          Copy-Item "$env:GITHUB_WORKSPACE\stage\yingce.exe" "$pkg\yingce.exe"
-          Copy-Item 'pack\portable\*' $pkg -Recurse
-          # node 便携版
-          Expand-Archive 'dl\node.zip' 'dl\nodex'
-          $ndir = (Get-ChildItem 'dl\nodex' -Directory)[0].FullName
-          New-Item -ItemType Directory -Force "$pkg\tools\node" | Out-Null
-          Copy-Item "$ndir\*" "$pkg\tools\node\" -Recurse
-          # ffmpeg 便携版
-          Expand-Archive 'dl\ffmpeg.zip' 'dl\ffx'
-          $fdir = (Get-ChildItem 'dl\ffx' -Directory)[0].FullName
-          New-Item -ItemType Directory -Force "$pkg\tools\ffmpeg" | Out-Null
-          Copy-Item "$fdir\bin" "$pkg\tools\ffmpeg\" -Recurse
-          # Agent 运行时（含 node_modules）
-          Copy-Item -Recurse 'upstream\backend\agent-runtime' "$pkg\agent-runtime"
-          # 官方插件包
-          Copy-Item -Recurse 'upstream\plugin-packages' "$pkg\plugin-packages"
-          # 版本信息
-          "上游: ddcat-ai/open-ai-canvas@${{ env.UPSTREAM_REF }} / 构建: $(Get-Date -Format 'yyyy-MM-dd HH:mm') UTC" | Out-File "$pkg\版本.txt" -Encoding utf8
-          Get-ChildItem $pkg | Format-Table Name, @{n='Size'; e={ if ($_.PSIsContainer) { '<dir>' } else { "$([math]::Round($_.Length/1MB,1)) MB" } } }
-
-      - name: 打包 zip
-        run: |
-          Compress-Archive -Path "$env:GITHUB_WORKSPACE\stage\yingce-portable" -DestinationPath "$env:GITHUB_WORKSPACE\yingce-portable-win64.zip"
-          Get-Item "$env:GITHUB_WORKSPACE\yingce-portable-win64.zip" | Select-Object Name, @{n='MB'; e={[math]::Round($_.Length / 1MB, 1)}}
-
-      - name: 上传产物
-        uses: actions/upload-artifact@v4
-        with:
-          name: yingce-portable-win64
-          path: yingce-portable-win64.zip
-
-      - name: 发布 Release（仅 win-v* 标签触发）
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
-        with:
-          files: yingce-portable-win64.zip
-          generate_release_notes: true
+    uses: ./.github/workflows/build-core.yml
+    with:
+      upstream_ref: ${{ inputs.upstream_ref || 'dc035d51311925e48ab1542df094bd1e2b07ba7f' }}
+      # 标签推送时发版（release_tag=标签名），手动运行时只构建不发版
+      release_tag: ${{ github.ref_type == 'tag' && github.ref_name || '' }}

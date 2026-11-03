@@ -1,0 +1,166 @@
+# 影策 Windows 便携版 — 构建核心（可复用）（作者：Passwd Word）
+#
+# 被 build.yml（手动/标签触发）与 auto-update.yml（定时跟踪上游）调用。
+# 输入 upstream_ref：上游 ddcat-ai/open-ai-canvas 的 commit / tag / 分支。
+# 输入 release_tag：发版用的 win-v* 标签；为空则只构建、只传 artifact，不发 Release。
+# 输入 release_notes：Release 说明；为空则用 --generate-notes 自动生成。
+name: 构建核心（复用）
+
+on:
+  workflow_call:
+    inputs:
+      upstream_ref:
+        description: '上游 ddcat-ai/open-ai-canvas 的 commit / tag / 分支'
+        required: true
+        type: string
+      release_tag:
+        description: '发版用的 win-v* 标签；为空则只构建不发 Release'
+        required: false
+        type: string
+        default: ''
+      release_notes:
+        description: 'Release 说明文本；为空则自动生成'
+        required: false
+        type: string
+        default: ''
+
+permissions:
+  contents: write  # 发 Release 需要（实际生效的是调用方的权限）
+
+env:
+  NODE_VERSION: '22.19.0'
+  FFMPEG_URL: 'https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip'
+
+jobs:
+  build:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: 拉取上游源码
+        uses: actions/checkout@v4
+        with:
+          repository: ddcat-ai/open-ai-canvas
+          ref: ${{ inputs.upstream_ref }}
+          path: upstream
+
+      - name: 拉取本仓库（补丁与脚本）
+        uses: actions/checkout@v4
+        with:
+          path: pack
+
+      - name: 安装 Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+          cache: true
+
+      - name: 安装 Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.3.9'
+
+      - name: 安装 mingw-w64（CGO 编译 sqlite 用）
+        run: |
+          choco install mingw -y --no-progress
+          $mingwBin = 'C:\ProgramData\chocolatey\lib\mingw\tools\install\mingw64\bin'
+          if (Test-Path $mingwBin) { $env:PATH = "$mingwBin;$env:PATH" }
+          gcc --version | Select-Object -First 1
+          echo "$mingwBin" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+
+      - name: 应用便携版补丁（前端嵌入 + 双击自启动 + 托盘）
+        run: |
+          Copy-Item 'pack\patch\webstatic.go' 'upstream\backend\cmd\server\webstatic.go'
+          Copy-Item 'pack\patch\selflaunch.go' 'upstream\backend\cmd\server\selflaunch.go'
+          Copy-Item 'pack\patch\tray_windows.go' 'upstream\backend\cmd\server\tray_windows.go'
+          Copy-Item 'pack\patch\tray_other.go' 'upstream\backend\cmd\server\tray_other.go'
+          python pack\patch\patch_main.py upstream\backend\cmd\server\main.go
+
+      - name: 拉取托盘库依赖
+        working-directory: upstream/backend
+        run: go get github.com/getlantern/systray
+
+      - name: 生成托盘图标
+        run: go run pack\patch\tools\genicon\main.go -out upstream\backend\cmd\server\trayicon.ico
+
+      - name: 构建前端
+        run: |
+          cd upstream\web
+          bun install --frozen-lockfile
+          bun --bun ./node_modules/vite/bin/vite.js build
+
+      - name: 编译后端 Windows exe（前端已嵌入）
+        run: |
+          $webdist = 'upstream\backend\cmd\server\webdist'
+          if (Test-Path $webdist) { Remove-Item -Recurse -Force $webdist }
+          Copy-Item -Recurse 'upstream\web\dist' $webdist
+          $env:CGO_ENABLED = '1'
+          cd upstream\backend
+          New-Item -ItemType Directory -Force "$env:GITHUB_WORKSPACE\stage" | Out-Null
+          go build -trimpath -ldflags '-s -w -H=windowsgui' -o "$env:GITHUB_WORKSPACE\stage\yingce.exe" ./cmd/server
+          $f = Get-Item "$env:GITHUB_WORKSPACE\stage\yingce.exe"
+          Write-Host ("yingce.exe = {0} MB" -f [math]::Round($f.Length / 1MB, 1))
+
+      - name: 准备 Agent 运行时依赖
+        run: |
+          cd upstream\backend\agent-runtime\pi
+          npm ci --no-audit --no-fund
+
+      - name: 下载 node / ffmpeg 便携版
+        run: |
+          New-Item -ItemType Directory -Force dl | Out-Null
+          curl.exe -L --retry 3 -o dl\node.zip "https://nodejs.org/dist/v$env:NODE_VERSION/node-v$env:NODE_VERSION-win-x64.zip"
+          curl.exe -L --retry 3 -o dl\ffmpeg.zip $env:FFMPEG_URL
+
+      - name: 组装便携包
+        run: |
+          $pkg = "$env:GITHUB_WORKSPACE\stage\yingce-portable"
+          New-Item -ItemType Directory -Force $pkg | Out-Null
+          Copy-Item "$env:GITHUB_WORKSPACE\stage\yingce.exe" "$pkg\yingce.exe"
+          Copy-Item 'pack\portable\*' $pkg -Recurse
+          # node 便携版
+          Expand-Archive 'dl\node.zip' 'dl\nodex'
+          $ndir = (Get-ChildItem 'dl\nodex' -Directory)[0].FullName
+          New-Item -ItemType Directory -Force "$pkg\tools\node" | Out-Null
+          Copy-Item "$ndir\*" "$pkg\tools\node\" -Recurse
+          # ffmpeg 便携版
+          Expand-Archive 'dl\ffmpeg.zip' 'dl\ffx'
+          $fdir = (Get-ChildItem 'dl\ffx' -Directory)[0].FullName
+          New-Item -ItemType Directory -Force "$pkg\tools\ffmpeg" | Out-Null
+          Copy-Item "$fdir\bin" "$pkg\tools\ffmpeg\" -Recurse
+          # Agent 运行时（含 node_modules）
+          Copy-Item -Recurse 'upstream\backend\agent-runtime' "$pkg\agent-runtime"
+          # 官方插件包
+          Copy-Item -Recurse 'upstream\plugin-packages' "$pkg\plugin-packages"
+          # 版本信息
+          "上游: ddcat-ai/open-ai-canvas@${{ inputs.upstream_ref }} / 构建: $(Get-Date -Format 'yyyy-MM-dd HH:mm') UTC" | Out-File "$pkg\版本.txt" -Encoding utf8
+          Get-ChildItem $pkg | Format-Table Name, @{n='Size'; e={ if ($_.PSIsContainer) { '<dir>' } else { "$([math]::Round($_.Length/1MB,1)) MB" } } }
+
+      - name: 打包 zip
+        run: |
+          Compress-Archive -Path "$env:GITHUB_WORKSPACE\stage\yingce-portable" -DestinationPath "$env:GITHUB_WORKSPACE\yingce-portable-win64.zip"
+          Get-Item "$env:GITHUB_WORKSPACE\yingce-portable-win64.zip" | Select-Object Name, @{n='MB'; e={[math]::Round($_.Length / 1MB, 1)}}
+
+      - name: 上传产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: yingce-portable-win64
+          path: yingce-portable-win64.zip
+
+      - name: 发布 Release
+        if: inputs.release_tag != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = "${{ inputs.release_tag }}"
+          $notes = @'
+          ${{ inputs.release_notes }}
+          '@
+          if ([string]::IsNullOrWhiteSpace($notes)) {
+            gh release create $tag --target $env:GITHUB_SHA --title "影策 Windows 便携版 $tag" --generate-notes "yingce-portable-win64.zip"
+          } else {
+            $notes | Out-File -Encoding utf8 release-notes.md
+            gh release create $tag --target $env:GITHUB_SHA --title "影策 Windows 便携版 $tag" --notes-file release-notes.md "yingce-portable-win64.zip"
+          }
+          Write-Host "Release 已发布: $tag"

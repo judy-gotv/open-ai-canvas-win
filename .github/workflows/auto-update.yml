@@ -1,0 +1,109 @@
+# 影策 Windows 便携版 — 自动跟踪上游（作者：Passwd Word）
+#
+# 每 6 小时检查一次上游 ddcat-ai/open-ai-canvas 的 main 分支：
+#   有新提交 → 自动构建 → 发 win-v* Release → 更新 upstream-state/last-built-sha.txt
+#   无变化   → 静默结束，什么都不做
+# 构建失败不更新状态文件（下次继续重试），并自动建 Issue 提醒。
+# 手动立即检查一次：Actions 页选本工作流 → Run workflow。
+name: 自动跟踪上游更新
+
+on:
+  schedule:
+    - cron: '17 */6 * * *'  # 每 6 小时，错开整点
+  workflow_dispatch:  # 手动立即检查一次
+
+permissions:
+  contents: write  # 发 Release、回写状态文件需要
+  issues: write    # 构建失败时建 Issue 提醒需要
+
+concurrency:
+  group: winportable-build
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      build_needed: ${{ steps.decide.outputs.build_needed }}
+      upstream_sha: ${{ steps.decide.outputs.upstream_sha }}
+      next_tag: ${{ steps.decide.outputs.next_tag }}
+      release_notes: ${{ steps.decide.outputs.release_notes }}
+    steps:
+      - name: 拉取本仓库
+        uses: actions/checkout@v4
+
+      - name: 检查上游是否有新提交
+        id: decide
+        run: |
+          upstream_sha=$(git ls-remote https://github.com/ddcat-ai/open-ai-canvas.git HEAD | awk '{print $1}')
+          echo "上游 HEAD: $upstream_sha"
+          last_built=$(cat upstream-state/last-built-sha.txt 2>/dev/null | tr -d '[:space:]')
+          echo "上次构建: ${last_built:-（无记录）}"
+          if [ -z "$upstream_sha" ]; then
+            echo "取不到上游 HEAD，本轮跳过"
+            echo "build_needed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ "$upstream_sha" = "$last_built" ]; then
+            echo "上游无新提交，本轮不构建"
+            echo "build_needed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "发现上游新提交，准备构建"
+          echo "build_needed=true" >> "$GITHUB_OUTPUT"
+          echo "upstream_sha=$upstream_sha" >> "$GITHUB_OUTPUT"
+          # 取现有最大 win-v0.1.N，patch 位 +1 作为新标签
+          max_patch=$(git ls-remote --tags origin 'refs/tags/win-v*' | grep -oE 'win-v[0-9]+\.[0-9]+\.[0-9]+' | awk -F'[v.]' '{print $4}' | sort -n | tail -1)
+          next_tag="win-v0.1.$(( ${max_patch:-5} + 1 ))"
+          echo "next_tag=$next_tag" >> "$GITHUB_OUTPUT"
+          echo "新标签: $next_tag"
+          # Release 说明
+          {
+            echo "release_notes<<EOF"
+            echo "上游 ddcat-ai/open-ai-canvas @ ${upstream_sha:0:8}（自动跟踪构建）"
+            echo ""
+            if [ -n "$last_built" ]; then
+              echo "上游变更对比：https://github.com/ddcat-ai/open-ai-canvas/compare/${last_built}...${upstream_sha}"
+            else
+              echo "（首次自动跟踪，无对比基线）"
+            fi
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: check
+    if: needs.check.outputs.build_needed == 'true'
+    uses: ./.github/workflows/build-core.yml
+    with:
+      upstream_ref: ${{ needs.check.outputs.upstream_sha }}
+      release_tag: ${{ needs.check.outputs.next_tag }}
+      release_notes: ${{ needs.check.outputs.release_notes }}
+
+  record:
+    needs: [check, build]
+    if: needs.check.outputs.build_needed == 'true' && needs.build.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - name: 拉取本仓库
+        uses: actions/checkout@v4
+      - name: 更新已构建的上游 SHA
+        run: |
+          echo "${{ needs.check.outputs.upstream_sha }}" > upstream-state/last-built-sha.txt
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add upstream-state/last-built-sha.txt
+          git commit -m "自动更新：已构建上游 ${{ needs.check.outputs.upstream_sha }}（${{ needs.check.outputs.next_tag }}）" || echo "无变更可提交"
+          git push
+
+  notify-failure:
+    needs: [check, build]
+    if: needs.check.outputs.build_needed == 'true' && needs.build.result == 'failure'
+    runs-on: ubuntu-latest
+    steps:
+      - name: 建 Issue 提醒构建失败
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh issue create --repo "$GITHUB_REPOSITORY" \
+            --title "自动构建失败：上游 ${{ needs.check.outputs.upstream_sha }}" \
+            --body "自动跟踪构建在上游提交 ${{ needs.check.outputs.upstream_sha }} 失败（目标标签 ${{ needs.check.outputs.next_tag }}）。常见原因是上游改了 main.go 导致补丁锚点失效，请看日志定位。Run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" || true
