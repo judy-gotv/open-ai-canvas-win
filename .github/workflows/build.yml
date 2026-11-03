@@ -12,6 +12,10 @@ on:
         description: '上游 ddcat-ai/open-ai-canvas 的 commit / tag / 分支'
         required: false
         default: 'dc035d51311925e48ab1542df094bd1e2b07ba7f'
+      release_tag:
+        description: '发版标签（如 win-v0.1.7）；为空则只构建不发版'
+        required: false
+        default: ''
   push:
     tags:
       - 'win-v*'
@@ -28,5 +32,5 @@ jobs:
     uses: ./.github/workflows/build-core.yml
     with:
       upstream_ref: ${{ inputs.upstream_ref || 'dc035d51311925e48ab1542df094bd1e2b07ba7f' }}
-      # 标签推送时发版（release_tag=标签名），手动运行时只构建不发版
-      release_tag: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+      # 标签推送时发版（release_tag=标签名）；手动运行时按输入决定是否发版
+      release_tag: ${{ github.ref_type == 'tag' && github.ref_name || inputs.release_tag || '' }}
