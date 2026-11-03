@@ -32,9 +32,11 @@ ARG TARGETVARIANT
 ARG GOPROXY=https://proxy.golang.org,direct
 ENV GOPROXY=$GOPROXY
 
-# CGO 交叉工具链（sqlite 需要 C 编译器）
+# CGO 交叉工具链（sqlite 需要 C 编译器；libc6-dev-*-cross 提供目标平台头文件）
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc-aarch64-linux-gnu gcc-arm-linux-gnueabihf python3 \
+    gcc-aarch64-linux-gnu libc6-dev-arm64-cross \
+    gcc-arm-linux-gnueabihf libc6-dev-armhf-cross \
+    python3 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /src/backend
