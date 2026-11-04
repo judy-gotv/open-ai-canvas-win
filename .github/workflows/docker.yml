@@ -1,6 +1,7 @@
 # 影策 Docker 版构建（作者：Passwd Word）
 #
-# 触发：Actions 页面手动运行，或 docker/、patch/ 有推送时自动构建。
+# 触发：Actions 页面手动运行；docker/、patch/、本文件有推送时自动构建；
+#       上游有新提交时由“自动跟踪上游更新”工作流自动触发（同上游 SHA）。
 # 产物：多架构镜像 ghcr.io/judy-gotv/open-ai-canvas（linux/amd64, linux/arm64, linux/arm/v7）
 # 单镜像：前端已嵌入后端，一个容器同时提供 Web UI 与 /api。
 # 构建顺序遵循统一规范：fresh 上游 → 拷补丁 → 打补丁 → 编译（补丁逻辑在 docker/Dockerfile 内）。
@@ -12,7 +13,7 @@ on:
       upstream_ref:
         description: '上游 ddcat-ai/open-ai-canvas 的 commit / tag / 分支'
         required: false
-        default: 'da5bff04b667b424b1463785e2d6e29413c77a98'
+        default: 'main'
       image_tag:
         description: '镜像标签（默认 latest；可填如 v1.0.0）'
         required: false
@@ -25,7 +26,7 @@ on:
       - '.github/workflows/docker.yml'
 
 permissions:
-  contents: read
+  contents: write # 回写 upstream-state/last-docker-sha.txt 需要
   packages: write # 推送 ghcr.io 需要
 
 concurrency:
@@ -47,7 +48,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: ddcat-ai/open-ai-canvas
-          ref: ${{ inputs.upstream_ref || 'da5bff04b667b424b1463785e2d6e29413c77a98' }}
+          ref: ${{ inputs.upstream_ref || 'main' }}
           path: upstream
 
       - name: 设置 QEMU（多架构构建）
@@ -68,9 +69,11 @@ jobs:
         run: |
           cd upstream
           SHA=$(git rev-parse --short HEAD)
+          FULL_SHA=$(git rev-parse HEAD)
           TAG="${{ inputs.image_tag || 'latest' }}"
           echo "tags=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${TAG},${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:sha-${SHA}" >> $GITHUB_OUTPUT
           echo "upstream_sha=${SHA}" >> $GITHUB_OUTPUT
+          echo "upstream_sha_full=${FULL_SHA}" >> $GITHUB_OUTPUT
 
       - name: 构建并推送多架构镜像
         uses: docker/build-push-action@v6
@@ -85,3 +88,12 @@ jobs:
             BUILD_COMMIT=${{ steps.meta.outputs.upstream_sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: 记录 Docker 已构建的上游 SHA（供自动跟踪判重）
+        run: |
+          echo "${{ steps.meta.outputs.upstream_sha_full }}" > upstream-state/last-docker-sha.txt
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add upstream-state/last-docker-sha.txt
+          git commit -m "Docker 镜像已基于上游 ${{ steps.meta.outputs.upstream_sha_full }} 构建" || echo "无变更可提交"
+          git push || echo "状态回写推送失败（镜像本身已推送成功），下次自动跟踪会重试构建"

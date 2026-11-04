@@ -2,6 +2,7 @@
 #
 # 每 6 小时检查一次上游 ddcat-ai/open-ai-canvas 的 main 分支：
 #   有新提交 → 自动构建 → 发 win-v* Release → 更新 upstream-state/last-built-sha.txt
+#              → 触发 Docker 镜像重建（同上游 SHA；该 SHA 已构建过则跳过）
 #   无变化   → 静默结束，什么都不做
 # 构建失败不更新状态文件（下次继续重试），并自动建 Issue 提醒。
 # 手动立即检查一次：Actions 页选本工作流 → Run workflow。
@@ -15,6 +16,7 @@ on:
 permissions:
   contents: write  # 发 Release、回写状态文件需要
   issues: write    # 构建失败时建 Issue 提醒需要
+  actions: write   # 触发 Docker 构建（workflow_dispatch）需要
 
 concurrency:
   group: winportable-build
@@ -94,6 +96,26 @@ jobs:
           git add upstream-state/last-built-sha.txt
           git commit -m "自动更新：已构建上游 ${{ needs.check.outputs.upstream_sha }}（${{ needs.check.outputs.next_tag }}）" || echo "无变更可提交"
           git push
+
+  trigger-docker:
+    needs: [check, build]
+    if: needs.check.outputs.build_needed == 'true' && needs.build.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - name: 拉取本仓库
+        uses: actions/checkout@v4
+      - name: 上游有新构建时触发 Docker 镜像重建
+        env:
+          GH_TOKEN: ${{ github.token }}
+          UPSTREAM_SHA: ${{ needs.check.outputs.upstream_sha }}
+        run: |
+          last_docker=$(cat upstream-state/last-docker-sha.txt 2>/dev/null | tr -d '[:space:]')
+          if [ -n "$last_docker" ] && [ "$last_docker" = "$UPSTREAM_SHA" ]; then
+            echo "Docker 镜像已基于 $UPSTREAM_SHA 构建过，跳过触发"
+            exit 0
+          fi
+          echo "上游 $UPSTREAM_SHA 有新的 Windows 构建，触发 Docker 镜像重建"
+          gh workflow run docker.yml --repo "$GITHUB_REPOSITORY" -f upstream_ref="$UPSTREAM_SHA" -f image_tag=latest
 
   notify-failure:
     needs: [check, build]
