@@ -16,6 +16,8 @@ COPY upstream/CHANGELOG.md /app/CHANGELOG.md
 COPY upstream/README.md /app/README.md
 COPY upstream/assets /app/assets
 COPY upstream/web ./
+# 前端有文件 import 后端目录的 JSON（如 platform-knowledge.ts → backend/internal/ecommerceagent/），需一并拷入否则 vite 报 UNRESOLVED_IMPORT
+COPY upstream/backend/internal/ecommerceagent/platform_knowledge.json /app/backend/internal/ecommerceagent/platform_knowledge.json
 ARG BUILD_VERSION
 ARG BUILD_COMMIT=unknown
 ARG BUILD_TIME=unknown
