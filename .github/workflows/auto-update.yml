@@ -116,6 +116,12 @@ jobs:
           fi
           echo "上游 $UPSTREAM_SHA 有新的 Windows 构建，触发 Docker 镜像重建"
           gh workflow run docker.yml --repo "$GITHUB_REPOSITORY" -f upstream_ref="$UPSTREAM_SHA" -f image_tag=latest
+          echo "$UPSTREAM_SHA" > upstream-state/last-docker-sha.txt
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add upstream-state/last-docker-sha.txt
+          git commit -m "自动更新：Docker 已触发基于上游 $UPSTREAM_SHA 的重建" || echo "无变更可提交"
+          git push || echo "推送状态文件失败（不影响已触发的构建）"
 
   notify-failure:
     needs: [check, build]
