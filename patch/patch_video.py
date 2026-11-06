@@ -85,15 +85,15 @@ patch(p, [
 p = root + "/backend/internal/app/provider_protocol_result.go"
 patch(p, [
     # 2a. 无 ResultAdapter 声明时，按 OpenAI Videos 规范回退 /content
+    # 注：上游 v1.8.1（8611fc0e）把内联的类型断言抽成 protocolResultEndpoint() 辅助函数，
+    # 原锚点文本已不存在；改锚到新写法，语义不变（无声明端点时先试 /content 再走原逻辑）。
     (
-        T + 'resultAdapter, ok := adapter.(protocol.ResultAdapter)' + N
-        + T + 'capability, hasCapability := adapter.(protocol.ResultCapability)' + N
-        + T + 'if !ok || !hasCapability || !capability.ResultAvailable() {' + N
+        T + 'resultAdapter, ok := protocolResultEndpoint(adapter)' + N
+        + T + 'if !ok {' + N
         + T + T + 'return finishProtocolResult(ctx, input.Config, input.Mode, taskID, result, pollPolicy)' + N
         + T + '}',
-        T + 'resultAdapter, ok := adapter.(protocol.ResultAdapter)' + N
-        + T + 'capability, hasCapability := adapter.(protocol.ResultCapability)' + N
-        + T + 'if !ok || !hasCapability || !capability.ResultAvailable() {' + N
+        T + 'resultAdapter, ok := protocolResultEndpoint(adapter)' + N
+        + T + 'if !ok {' + N
         + T + T + '// OpenAI Videos 风格的上游（/v1/videos）在任务查询里只给状态不给 URL，' + N
         + T + T + '// 视频字节走独立的 /v1/videos/{task_id}/content 端点；放弃前最后试一次该规范端点。' + N
         + T + T + 'if output, handled, err := downloadOpenAIVideoContentResult(ctx, input, adapter, request, taskID, pollPolicy); handled {' + N
