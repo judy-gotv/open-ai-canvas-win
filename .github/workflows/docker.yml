@@ -2,7 +2,7 @@
 #
 # 触发：Actions 页面手动运行；docker/、patch/、本文件有推送时自动构建；
 #       上游有新提交时由“自动跟踪上游更新”工作流自动触发（同上游 SHA）。
-# 产物：多架构镜像 ghcr.io/judy-gotv/open-ai-canvas（linux/amd64, linux/arm64, linux/arm/v7）
+# 产物：多架构镜像 ghcr.io/judy-gotv/open-ai-canvas（linux/amd64, linux/arm64）
 # 单镜像：前端已嵌入后端，一个容器同时提供 Web UI 与 /api。
 # 构建顺序遵循统一规范：fresh 上游 → 拷补丁 → 打补丁 → 编译（补丁逻辑在 docker/Dockerfile 内）。
 name: 构建 Docker 镜像
@@ -81,7 +81,7 @@ jobs:
           context: .
           file: docker/Dockerfile
           push: true
-          platforms: linux/amd64,linux/arm64,linux/arm/v7
+          platforms: linux/amd64,linux/arm64
           tags: ${{ steps.meta.outputs.tags }}
           build-args: |
             BUILD_VERSION=${{ steps.meta.outputs.upstream_sha }}

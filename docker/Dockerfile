@@ -1,6 +1,6 @@
 # 影策 Docker 版：单镜像（前端嵌入后端），多架构。
 # 构建 context 为打包仓库根目录，上游源码在 upstream/ 子目录。
-# 构建：docker buildx build --platform linux/amd64,linux/arm64,linux/arm/v7
+# 构建：docker buildx build --platform linux/amd64,linux/arm64
 # 作者：Passwd Word
 
 # syntax=docker/dockerfile:1.7

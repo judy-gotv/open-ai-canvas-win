@@ -2,7 +2,7 @@
 
 > 作者：Passwd Word
 
-单镜像版影策（前端已嵌入后端），一个容器同时提供 Web UI 与 `/api`。支持 `linux/amd64`、`linux/arm64`、`linux/arm/v7`（32 位 ARM）。
+单镜像版影策（前端已嵌入后端），一个容器同时提供 Web UI 与 `/api`。支持 `linux/amd64`、`linux/arm64`。
 
 镜像地址：`ghcr.io/judy-gotv/open-ai-canvas:latest`
 
@@ -68,7 +68,6 @@ docker compose up -d
 |---|---|
 | `linux/amd64` | x86_64 服务器 / PC |
 | `linux/arm64` | ARM64 服务器（如腾讯云 ARM、树莓派 4/5 64 位系统） |
-| `linux/arm/v7` | 32 位 ARM（如树莓派 32 位系统） |
 
 Docker 会自动拉取对应架构的镜像，无需手动指定。
 
@@ -77,7 +76,7 @@ Docker 会自动拉取对应架构的镜像，无需手动指定。
 ```bash
 # 打包仓库根目录执行（需先 git clone 打包仓库，上游源码会自动检出）
 docker buildx build \
-  --platform linux/amd64,linux/arm64,linux/arm/v7 \
+  --platform linux/amd64,linux/arm64 \
   -f docker/Dockerfile \
   -t yingce:local .
 ```
