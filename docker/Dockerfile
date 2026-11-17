@@ -29,7 +29,7 @@ ENV CANVAS_BUILD_TIME=${BUILD_TIME}
 RUN bun --bun ./node_modules/vite/bin/vite.js build
 
 # ---------- 阶段2：后端交叉编译（含补丁） ----------
-FROM --platform=$BUILDPLATFORM golang:1.25-bookworm AS backend-build
+FROM --platform=$BUILDPLATFORM golang:1.25-trixie AS backend-build
 
 ARG TARGETARCH
 ARG TARGETVARIANT
