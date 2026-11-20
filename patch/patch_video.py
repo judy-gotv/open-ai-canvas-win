@@ -222,7 +222,7 @@ patch(p, [
         + T + 'if err := json.Unmarshal([]byte(decryptedInput), &input); err != nil {' + N
         + T + T + 'return nil, "", errNoChannelConfig' + N
         + T + '}' + N
-        + T + 'config, err := s.resolveProviderConfig(input.Config)' + N
+        + T + 'config, err := s.resolveProviderConfig(input.Config, task)' + N
         + T + 'if err != nil || strings.TrimSpace(config.BaseURL) == "" {' + N
         + T + T + 'return nil, "", errNoChannelConfig' + N
         + T + '}' + N
